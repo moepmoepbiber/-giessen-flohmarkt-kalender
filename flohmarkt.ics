@@ -5,26 +5,8 @@ CALSCALE:GREGORIAN
 X-WR-CALNAME:Flohmarkt Hessenhallen Gießen
 X-WR-TIMEZONE:Europe/Berlin
 BEGIN:VEVENT
-UID:giessen-hessenhallen-20261101@giessen-flohmarkt-kalender
-DTSTAMP:20260821T174032Z
-DTSTART;TZID=Europe/Berlin:20261101T080000
-DTEND;TZID=Europe/Berlin:20261101T150000
-SUMMARY:Antik & Trödel – Hessenhallen Gießen
-LOCATION:Hessenhallen\, An der Hessenhalle 11\, 35398 Gießen
-DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.
-END:VEVENT
-BEGIN:VEVENT
-UID:giessen-hessenhallen-20261004@giessen-flohmarkt-kalender
-DTSTAMP:20260821T174032Z
-DTSTART;TZID=Europe/Berlin:20261004T080000
-DTEND;TZID=Europe/Berlin:20261004T150000
-SUMMARY:Antik & Trödel – Hessenhallen Gießen
-LOCATION:Hessenhallen\, An der Hessenhalle 11\, 35398 Gießen
-DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.
-END:VEVENT
-BEGIN:VEVENT
 UID:giessen-hessenhallen-20260906@giessen-flohmarkt-kalender
-DTSTAMP:20260821T174032Z
+DTSTAMP:20260821T180508Z
 DTSTART;TZID=Europe/Berlin:20260906T080000
 DTEND;TZID=Europe/Berlin:20260906T150000
 SUMMARY:Antik & Trödel – Hessenhallen Gießen
@@ -32,8 +14,26 @@ LOCATION:Hessenhallen\, An der Hessenhalle 11\, 35398 Gießen
 DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.
 END:VEVENT
 BEGIN:VEVENT
+UID:giessen-hessenhallen-20261004@giessen-flohmarkt-kalender
+DTSTAMP:20260821T180508Z
+DTSTART;TZID=Europe/Berlin:20261004T080000
+DTEND;TZID=Europe/Berlin:20261004T150000
+SUMMARY:Antik & Trödel – Hessenhallen Gießen
+LOCATION:Hessenhallen\, An der Hessenhalle 11\, 35398 Gießen
+DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.
+END:VEVENT
+BEGIN:VEVENT
+UID:giessen-hessenhallen-20261101@giessen-flohmarkt-kalender
+DTSTAMP:20260821T180508Z
+DTSTART;TZID=Europe/Berlin:20261101T080000
+DTEND;TZID=Europe/Berlin:20261101T150000
+SUMMARY:Antik & Trödel – Hessenhallen Gießen
+LOCATION:Hessenhallen\, An der Hessenhalle 11\, 35398 Gießen
+DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.
+END:VEVENT
+BEGIN:VEVENT
 UID:giessen-hessenhallen-20261206@giessen-flohmarkt-kalender
-DTSTAMP:20260821T174032Z
+DTSTAMP:20260821T180508Z
 DTSTART;TZID=Europe/Berlin:20261206T080000
 DTEND;TZID=Europe/Berlin:20261206T150000
 SUMMARY:Antik & Trödel – Hessenhallen Gießen
