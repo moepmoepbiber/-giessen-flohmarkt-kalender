@@ -1,0 +1,89 @@
+name: Flohmarkt-Kalender aktualisieren
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-calendar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository herunterladen
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Kalender aktualisieren
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from urllib.request import urlopen
+          import re
+
+          url = "https://www.antik-troedel-markt.de/aussteller-03.php"
+          html = urlopen(url, timeout=30).read().decode("utf-8", errors="ignore")
+
+          # Datumsangaben wie 06.09.2026 aus der offiziellen Seite erkennen
+          dates = sorted(set(re.findall(r'\b\d{2}\.\d{2}\.\d{4}\b', html)))
+
+          events = []
+
+          for date in dates:
+              try:
+                  dt = datetime.strptime(date, "%d.%m.%Y").replace(
+                      hour=8,
+                      minute=0,
+                      tzinfo=ZoneInfo("Europe/Berlin")
+                  )
+              except ValueError:
+                  continue
+
+              # Nur zukünftige Termine übernehmen
+              if dt.date() < datetime.now(ZoneInfo("Europe/Berlin")).date():
+                  continue
+
+              uid = f"giessen-hessenhallen-{dt.strftime('%Y%m%d')}@giessen-flohmarkt-kalender"
+
+              events.append(
+                  "BEGIN:VEVENT\r\n"
+                  f"UID:{uid}\r\n"
+                  f"DTSTAMP:{datetime.now(ZoneInfo('UTC')).strftime('%Y%m%dT%H%M%SZ')}\r\n"
+                  f"DTSTART;TZID=Europe/Berlin:{dt.strftime('%Y%m%dT080000')}\r\n"
+                  f"DTEND;TZID=Europe/Berlin:{dt.strftime('%Y%m%dT150000')}\r\n"
+                  "SUMMARY:Antik & Trödel – Hessenhallen Gießen\r\n"
+                  "LOCATION:Hessenhallen\\, An der Hessenhalle 11\\, 35398 Gießen\r\n"
+                  "DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.\r\n"
+                  "END:VEVENT\r\n"
+              )
+
+          ics = (
+              "BEGIN:VCALENDAR\r\n"
+              "VERSION:2.0\r\n"
+              "PRODID:-//Gießen Hessenhallen Flohmarkt//DE\r\n"
+              "CALSCALE:GREGORIAN\r\n"
+              "X-WR-CALNAME:Flohmarkt Hessenhallen Gießen\r\n"
+              "X-WR-TIMEZONE:Europe/Berlin\r\n"
+              + "".join(events) +
+              "END:VCALENDAR\r\n"
+          )
+
+          with open("flohmarkt.ics", "w", encoding="utf-8", newline="") as f:
+              f.write(ics)
+          PY
+
+      - name: Änderungen speichern
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add flohmarkt.ics
+          git diff --cached --quiet || git commit -m "Kalender automatisch aktualisiert"
+          git push
