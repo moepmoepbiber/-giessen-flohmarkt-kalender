@@ -2,7 +2,7 @@ name: Flohmarkt-Kalender aktualisieren
 
 on:
   schedule:
-    - cron: "0 8 * * 1"
+    - cron: "17 8 * * 1"
       timezone: "Europe/Berlin"
   workflow_dispatch:
 
@@ -22,93 +22,176 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Kalender aktualisieren
+      - name: Offizielle Webseite abrufen
+        run: |
+          python - <<'PY'
+          from urllib.request import Request, urlopen
+          import time
+
+          url = "https://www.antik-troedel-markt.de/aussteller-03.php"
+
+          headers = {
+              "User-Agent": (
+                  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 "
+                  "like Mac OS X) AppleWebKit/605.1.15 "
+                  "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+              )
+          }
+
+          last_error = None
+
+          for attempt in range(5):
+              try:
+                  print(f"Versuch {attempt + 1}/5 ...")
+
+                  request = Request(url, headers=headers)
+
+                  with urlopen(request, timeout=90) as response:
+                      data = response.read()
+
+                  if len(data) < 1000:
+                      raise RuntimeError(
+                          "Webseite wurde erreicht, aber die Antwort "
+                          "ist ungewöhnlich kurz."
+                      )
+
+                  with open(
+                      "veranstalterseite.html",
+                      "wb"
+                  ) as f:
+                      f.write(data)
+
+                  print(
+                      f"Erfolgreich abgerufen: {len(data)} Bytes"
+                  )
+
+                  break
+
+              except Exception as error:
+                  last_error = error
+                  print(f"Fehler: {error}")
+
+                  if attempt < 4:
+                      print("Warte 20 Sekunden und versuche es erneut...")
+                      time.sleep(20)
+
+          else:
+              raise RuntimeError(
+                  f"Webseite nach 5 Versuchen nicht erreichbar: "
+                  f"{last_error}"
+              )
+          PY
+
+      - name: Termine auswerten
         run: |
           python - <<'PY'
           from datetime import datetime, timezone
-          from urllib.request import Request, urlopen
-          from html.parser import HTMLParser
+          from html import unescape
           import re
 
-          URL = "https://www.antik-troedel-markt.de/aussteller-03.php"
+          with open(
+              "veranstalterseite.html",
+              "rb"
+          ) as f:
+              html = f.read().decode(
+                  "utf-8",
+                  errors="ignore"
+              )
 
-          request = Request(
-              URL,
-              headers={"User-Agent": "Mozilla/5.0"}
+          # HTML in normalen Text umwandeln
+          text = re.sub(
+              r"<script.*?</script>",
+              " ",
+              html,
+              flags=re.S | re.I
           )
 
-          html = urlopen(request, timeout=30).read().decode(
-              "utf-8", errors="ignore"
+          text = re.sub(
+              r"<style.*?</style>",
+              " ",
+              text,
+              flags=re.S | re.I
           )
 
-          # HTML-Tags entfernen
-          text = re.sub(r"<script.*?</script>", " ", html, flags=re.S | re.I)
-          text = re.sub(r"<style.*?</style>", " ", text, flags=re.S | re.I)
-          text = re.sub(r"<[^>]+>", " ", text)
+          text = re.sub(
+              r"<[^>]+>",
+              " ",
+              text
+          )
+
+          text = unescape(text)
           text = re.sub(r"\s+", " ", text)
 
-          # Nur Datumsangaben des Jahres 2026/2027/... finden.
-          # Zusätzlich muss im näheren Text "Antik" oder "Trödel"
-          # vorkommen.
-          matches = re.finditer(
-              r"(?i).{0,180}(?:antik|trödel).{0,180}?"
-              r"(\d{1,2}\.\d{1,2}\.\d{4})",
-              text
-          )
+          # Nur Datumsangaben erfassen, die in unmittelbarer
+          # Nähe zu "Antik" oder "Trödel" stehen.
+          patterns = [
+              r"(?i)(?:antik|trödel).{0,250}?(\d{1,2}\.\d{1,2}\.\d{4})",
+              r"(\d{1,2}\.\d{1,2}\.\d{4}).{0,250}?(?i:antik|trödel)"
+          ]
 
-          dates = set()
+          found = set()
 
-          for match in matches:
-              date_text = match.group(1)
+          for pattern in patterns:
+              for match in re.finditer(pattern, text):
+                  date_text = match.group(1)
 
-              try:
-                  dt = datetime.strptime(
-                      date_text,
-                      "%d.%m.%Y"
-                  )
-                  dates.add(dt.strftime("%Y%m%d"))
-              except ValueError:
-                  pass
+                  try:
+                      dt = datetime.strptime(
+                          date_text,
+                          "%d.%m.%Y"
+                      )
 
-          # Falls die Seite das Datum vor "Antik & Trödel" nennt,
-          # auch in die andere Richtung suchen.
-          matches_reverse = re.finditer(
-              r"(\d{1,2}\.\d{1,2}\.\d{4}).{0,180}"
-              r"(?i:antik|trödel)",
-              text
-          )
+                      found.add(
+                          dt.strftime("%Y%m%d")
+                      )
 
-          for match in matches_reverse:
-              date_text = match.group(1)
-
-              try:
-                  dt = datetime.strptime(
-                      date_text,
-                      "%d.%m.%Y"
-                  )
-                  dates.add(dt.strftime("%Y%m%d"))
-              except ValueError:
-                  pass
+                  except ValueError:
+                      pass
 
           today = datetime.now().date()
 
+          future_dates = []
+
+          for date_id in sorted(found):
+              dt = datetime.strptime(
+                  date_id,
+                  "%Y%m%d"
+              )
+
+              if dt.date() >= today:
+                  future_dates.append(date_id)
+
+          print("Gefundene zukünftige Termine:")
+
+          for date_id in future_dates:
+              print(date_id)
+
+          # Sicherheitsprüfung:
+          # Wenn überhaupt kein Termin gefunden wurde,
+          # wird die bestehende ICS-Datei NICHT angerührt.
+          if not future_dates:
+              raise RuntimeError(
+                  "Keine zukünftigen Flohmarkttermine gefunden. "
+                  "Die bestehende ICS-Datei bleibt unverändert."
+              )
+
           events = []
 
-          for date_id in sorted(dates):
-              dt = datetime.strptime(date_id, "%Y%m%d")
-
-              if dt.date() < today:
-                  continue
+          for date_id in future_dates:
 
               uid = (
                   f"giessen-hessenhallen-{date_id}"
                   "@giessen-flohmarkt-kalender"
               )
 
+              now = datetime.now(
+                  timezone.utc
+              ).strftime("%Y%m%dT%H%M%SZ")
+
               events.append(
                   "BEGIN:VEVENT\r\n"
                   f"UID:{uid}\r\n"
-                  f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}\r\n"
+                  f"DTSTAMP:{now}\r\n"
                   f"DTSTART;TZID=Europe/Berlin:{date_id}T080000\r\n"
                   f"DTEND;TZID=Europe/Berlin:{date_id}T150000\r\n"
                   "SUMMARY:Antik & Trödel – Hessenhallen Gießen\r\n"
@@ -124,8 +207,8 @@ jobs:
               "CALSCALE:GREGORIAN\r\n"
               "X-WR-CALNAME:Flohmarkt Hessenhallen Gießen\r\n"
               "X-WR-TIMEZONE:Europe/Berlin\r\n"
-              + "".join(events) +
-              "END:VCALENDAR\r\n"
+              + "".join(events)
+              + "END:VCALENDAR\r\n"
           )
 
           with open(
@@ -136,16 +219,21 @@ jobs:
           ) as f:
               f.write(ics)
 
-          print("Gefundene zukünftige Termine:")
-          for date_id in sorted(dates):
-              print(date_id)
-
+          print(
+              f"ICS-Datei mit {len(events)} Terminen erstellt."
+          )
           PY
 
       - name: Änderungen speichern
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           git add flohmarkt.ics
-          git diff --cached --quiet || git commit -m "Kalender automatisch aktualisiert"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen."
+          else
+            git commit -m "Kalender automatisch aktualisiert"
+            git push
+          fi
