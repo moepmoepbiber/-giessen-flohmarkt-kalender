@@ -2,7 +2,8 @@ name: Flohmarkt-Kalender aktualisieren
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 8 * * 1"
+      timezone: "Europe/Berlin"
   workflow_dispatch:
 
 permissions:
@@ -24,41 +25,92 @@ jobs:
       - name: Kalender aktualisieren
         run: |
           python - <<'PY'
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-          from urllib.request import urlopen
+          from datetime import datetime, timezone
+          from urllib.request import Request, urlopen
+          from html.parser import HTMLParser
           import re
 
-          url = "https://www.antik-troedel-markt.de/aussteller-03.php"
-          html = urlopen(url, timeout=30).read().decode("utf-8", errors="ignore")
+          URL = "https://www.antik-troedel-markt.de/aussteller-03.php"
 
-          # Datumsangaben wie 06.09.2026 aus der offiziellen Seite erkennen
-          dates = sorted(set(re.findall(r'\b\d{2}\.\d{2}\.\d{4}\b', html)))
+          request = Request(
+              URL,
+              headers={"User-Agent": "Mozilla/5.0"}
+          )
+
+          html = urlopen(request, timeout=30).read().decode(
+              "utf-8", errors="ignore"
+          )
+
+          # HTML-Tags entfernen
+          text = re.sub(r"<script.*?</script>", " ", html, flags=re.S | re.I)
+          text = re.sub(r"<style.*?</style>", " ", text, flags=re.S | re.I)
+          text = re.sub(r"<[^>]+>", " ", text)
+          text = re.sub(r"\s+", " ", text)
+
+          # Nur Datumsangaben des Jahres 2026/2027/... finden.
+          # Zusätzlich muss im näheren Text "Antik" oder "Trödel"
+          # vorkommen.
+          matches = re.finditer(
+              r"(?i).{0,180}(?:antik|trödel).{0,180}?"
+              r"(\d{1,2}\.\d{1,2}\.\d{4})",
+              text
+          )
+
+          dates = set()
+
+          for match in matches:
+              date_text = match.group(1)
+
+              try:
+                  dt = datetime.strptime(
+                      date_text,
+                      "%d.%m.%Y"
+                  )
+                  dates.add(dt.strftime("%Y%m%d"))
+              except ValueError:
+                  pass
+
+          # Falls die Seite das Datum vor "Antik & Trödel" nennt,
+          # auch in die andere Richtung suchen.
+          matches_reverse = re.finditer(
+              r"(\d{1,2}\.\d{1,2}\.\d{4}).{0,180}"
+              r"(?i:antik|trödel)",
+              text
+          )
+
+          for match in matches_reverse:
+              date_text = match.group(1)
+
+              try:
+                  dt = datetime.strptime(
+                      date_text,
+                      "%d.%m.%Y"
+                  )
+                  dates.add(dt.strftime("%Y%m%d"))
+              except ValueError:
+                  pass
+
+          today = datetime.now().date()
 
           events = []
 
-          for date in dates:
-              try:
-                  dt = datetime.strptime(date, "%d.%m.%Y").replace(
-                      hour=8,
-                      minute=0,
-                      tzinfo=ZoneInfo("Europe/Berlin")
-                  )
-              except ValueError:
+          for date_id in sorted(dates):
+              dt = datetime.strptime(date_id, "%Y%m%d")
+
+              if dt.date() < today:
                   continue
 
-              # Nur zukünftige Termine übernehmen
-              if dt.date() < datetime.now(ZoneInfo("Europe/Berlin")).date():
-                  continue
-
-              uid = f"giessen-hessenhallen-{dt.strftime('%Y%m%d')}@giessen-flohmarkt-kalender"
+              uid = (
+                  f"giessen-hessenhallen-{date_id}"
+                  "@giessen-flohmarkt-kalender"
+              )
 
               events.append(
                   "BEGIN:VEVENT\r\n"
                   f"UID:{uid}\r\n"
-                  f"DTSTAMP:{datetime.now(ZoneInfo('UTC')).strftime('%Y%m%dT%H%M%SZ')}\r\n"
-                  f"DTSTART;TZID=Europe/Berlin:{dt.strftime('%Y%m%dT080000')}\r\n"
-                  f"DTEND;TZID=Europe/Berlin:{dt.strftime('%Y%m%dT150000')}\r\n"
+                  f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}\r\n"
+                  f"DTSTART;TZID=Europe/Berlin:{date_id}T080000\r\n"
+                  f"DTEND;TZID=Europe/Berlin:{date_id}T150000\r\n"
                   "SUMMARY:Antik & Trödel – Hessenhallen Gießen\r\n"
                   "LOCATION:Hessenhallen\\, An der Hessenhalle 11\\, 35398 Gießen\r\n"
                   "DESCRIPTION:Antik & Trödel – Hallenflohmarkt in den Hessenhallen Gießen.\r\n"
@@ -76,8 +128,18 @@ jobs:
               "END:VCALENDAR\r\n"
           )
 
-          with open("flohmarkt.ics", "w", encoding="utf-8", newline="") as f:
+          with open(
+              "flohmarkt.ics",
+              "w",
+              encoding="utf-8",
+              newline=""
+          ) as f:
               f.write(ics)
+
+          print("Gefundene zukünftige Termine:")
+          for date_id in sorted(dates):
+              print(date_id)
+
           PY
 
       - name: Änderungen speichern
