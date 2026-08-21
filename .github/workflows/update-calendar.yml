@@ -12,6 +12,7 @@ permissions:
 jobs:
   update-calendar:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Repository herunterladen
@@ -22,7 +23,10 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Offizielle Webseite abrufen
+      - name: Veranstalterseite abrufen
+        id: download
+        continue-on-error: true
+        timeout-minutes: 2
         run: |
           python - <<'PY'
           from urllib.request import Request, urlopen
@@ -31,56 +35,51 @@ jobs:
           url = "https://www.antik-troedel-markt.de/aussteller-03.php"
 
           headers = {
-              "User-Agent": (
+              "User-Agent":
                   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 "
                   "like Mac OS X) AppleWebKit/605.1.15 "
-                  "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
-              )
+                  "(KHTML, like Gecko) Version/18.0 "
+                  "Mobile/15E148 Safari/604.1"
           }
 
-          last_error = None
-
-          for attempt in range(5):
+          for attempt in range(3):
               try:
-                  print(f"Versuch {attempt + 1}/5 ...")
+                  print(f"Versuch {attempt + 1}/3")
 
                   request = Request(url, headers=headers)
 
-                  with urlopen(request, timeout=90) as response:
+                  with urlopen(request, timeout=20) as response:
                       data = response.read()
 
                   if len(data) < 1000:
                       raise RuntimeError(
-                          "Webseite wurde erreicht, aber die Antwort "
-                          "ist ungewöhnlich kurz."
+                          "Antwort der Webseite ist ungewöhnlich kurz."
                       )
 
-                  with open(
-                      "veranstalterseite.html",
-                      "wb"
-                  ) as f:
+                  with open("veranstalterseite.html", "wb") as f:
                       f.write(data)
 
-                  print(
-                      f"Erfolgreich abgerufen: {len(data)} Bytes"
-                  )
-
+                  print(f"Erfolgreich geladen: {len(data)} Bytes")
                   break
 
               except Exception as error:
-                  last_error = error
                   print(f"Fehler: {error}")
 
-                  if attempt < 4:
-                      print("Warte 20 Sekunden und versuche es erneut...")
-                      time.sleep(20)
+                  if attempt < 2:
+                      print("Warte 5 Sekunden...")
+                      time.sleep(5)
 
           else:
-              raise RuntimeError(
-                  f"Webseite nach 5 Versuchen nicht erreichbar: "
-                  f"{last_error}"
-              )
+              print("Webseite konnte nicht abgerufen werden.")
+              exit(1)
           PY
+
+      - name: Bei Abruffehler alten Kalender behalten
+        if: steps.download.outcome != 'success'
+        run: |
+          echo "Die Veranstalterseite war nicht erreichbar."
+          echo "Die bestehende flohmarkt.ics bleibt unverändert."
+          exit 0
 
       - name: Termine auswerten
         run: |
@@ -89,16 +88,9 @@ jobs:
           from html import unescape
           import re
 
-          with open(
-              "veranstalterseite.html",
-              "rb"
-          ) as f:
-              html = f.read().decode(
-                  "utf-8",
-                  errors="ignore"
-              )
+          with open("veranstalterseite.html", "rb") as f:
+              html = f.read().decode("utf-8", errors="ignore")
 
-          # HTML in normalen Text umwandeln
           text = re.sub(
               r"<script.*?</script>",
               " ",
@@ -113,38 +105,25 @@ jobs:
               flags=re.S | re.I
           )
 
-          text = re.sub(
-              r"<[^>]+>",
-              " ",
-              text
-          )
-
+          text = re.sub(r"<[^>]+>", " ", text)
           text = unescape(text)
           text = re.sub(r"\s+", " ", text)
 
-          # Nur Datumsangaben erfassen, die in unmittelbarer
-          # Nähe zu "Antik" oder "Trödel" stehen.
+          found = set()
+
           patterns = [
               r"(?i)(?:antik|trödel).{0,250}?(\d{1,2}\.\d{1,2}\.\d{4})",
               r"(\d{1,2}\.\d{1,2}\.\d{4}).{0,250}?(?i:antik|trödel)"
           ]
 
-          found = set()
-
           for pattern in patterns:
               for match in re.finditer(pattern, text):
-                  date_text = match.group(1)
-
                   try:
                       dt = datetime.strptime(
-                          date_text,
+                          match.group(1),
                           "%d.%m.%Y"
                       )
-
-                      found.add(
-                          dt.strftime("%Y%m%d")
-                      )
-
+                      found.add(dt.strftime("%Y%m%d"))
                   except ValueError:
                       pass
 
@@ -153,32 +132,24 @@ jobs:
           future_dates = []
 
           for date_id in sorted(found):
-              dt = datetime.strptime(
-                  date_id,
-                  "%Y%m%d"
-              )
+              dt = datetime.strptime(date_id, "%Y%m%d")
 
               if dt.date() >= today:
                   future_dates.append(date_id)
 
-          print("Gefundene zukünftige Termine:")
-
+          print("Gefundene Termine:")
           for date_id in future_dates:
               print(date_id)
 
-          # Sicherheitsprüfung:
-          # Wenn überhaupt kein Termin gefunden wurde,
-          # wird die bestehende ICS-Datei NICHT angerührt.
           if not future_dates:
               raise RuntimeError(
-                  "Keine zukünftigen Flohmarkttermine gefunden. "
-                  "Die bestehende ICS-Datei bleibt unverändert."
+                  "Keine zukünftigen Termine gefunden. "
+                  "Bestehender Kalender bleibt erhalten."
               )
 
           events = []
 
           for date_id in future_dates:
-
               uid = (
                   f"giessen-hessenhallen-{date_id}"
                   "@giessen-flohmarkt-kalender"
@@ -219,9 +190,7 @@ jobs:
           ) as f:
               f.write(ics)
 
-          print(
-              f"ICS-Datei mit {len(events)} Terminen erstellt."
-          )
+          print(f"{len(events)} Termine in ICS geschrieben.")
           PY
 
       - name: Änderungen speichern
